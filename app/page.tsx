@@ -23,19 +23,38 @@ import {
   Mail,
 } from "lucide-react"
 import Image from "next/image"
-import { useState } from "react"
+import { useEffect, useState } from "react"
+
+type FormState = {
+  name: string
+  email: string
+  phone: string
+  message: string
+}
+
+const createInitialFormState = (): FormState => ({
+  name: "",
+  email: "",
+  phone: "",
+  message: "",
+})
 
 export default function WebDesignServicesPage() {
   const [selectedPortfolio, setSelectedPortfolio] = useState<number | null>(null)
   const [expandedPricing, setExpandedPricing] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false) // Added state for mobile menu
   const [consultationPopupOpen, setConsultationPopupOpen] = useState(false)
-  const [formData, setFormData] = useState({
-    name: "",
-    email: "",
-    phone: "",
-    message: "",
-  })
+  const [formData, setFormData] = useState<FormState>(createInitialFormState)
+  const [isSubmitting, setIsSubmitting] = useState(false)
+  const [submitStatus, setSubmitStatus] = useState<"success" | "error" | null>(null)
+  const [submitMessage, setSubmitMessage] = useState("")
+
+  useEffect(() => {
+    if (consultationPopupOpen) {
+      setSubmitStatus(null)
+      setSubmitMessage("")
+    }
+  }, [consultationPopupOpen])
 
   const togglePricing = (plan: string) => {
     setExpandedPricing((prev) => (prev === plan ? null : plan))
@@ -50,19 +69,50 @@ export default function WebDesignServicesPage() {
   }
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    setSubmitStatus(null)
+    setSubmitMessage("")
+
     setFormData({
       ...formData,
       [e.target.name]: e.target.value,
     })
   }
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log("Form submitted:", formData)
-    // Here you would typically send the form data to your backend
-    setConsultationPopupOpen(false)
-    // Reset form
-    setFormData({ name: "", email: "", phone: "", message: "" })
+    setIsSubmitting(true)
+    setSubmitStatus(null)
+    setSubmitMessage("")
+
+    try {
+      const response = await fetch("/api/leads", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(formData),
+      })
+
+      const result = await response.json().catch(() => ({}))
+
+      if (!response.ok) {
+        throw new Error(result?.message || "We couldn't submit your request. Please try again later.")
+      }
+
+      setSubmitStatus("success")
+      setSubmitMessage("Thank you! We'll be in touch shortly.")
+      setFormData(createInitialFormState())
+    } catch (error) {
+      const errorMessage =
+        error instanceof Error && error.message
+          ? error.message
+          : "We couldn't submit your request. Please try again later."
+
+      setSubmitStatus("error")
+      setSubmitMessage(errorMessage)
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   const portfolioItems = [
@@ -1235,6 +1285,17 @@ export default function WebDesignServicesPage() {
 
               {/* Form */}
               <form onSubmit={handleFormSubmit} className="space-y-4 mb-6">
+                {submitStatus && submitMessage && (
+                  <p
+                    role="status"
+                    aria-live="polite"
+                    className={`text-sm font-medium ${
+                      submitStatus === "success" ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
+                    {submitMessage}
+                  </p>
+                )}
                 <input
                   type="text"
                   name="name"
@@ -1274,10 +1335,11 @@ export default function WebDesignServicesPage() {
                 {/* Primary CTA */}
                 <Button
                   type="submit"
-                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-6 text-lg rounded-lg shadow-lg flex items-center justify-center gap-2"
+                  disabled={isSubmitting}
+                  className="w-full bg-orange-500 hover:bg-orange-600 text-white py-6 text-lg rounded-lg shadow-lg flex items-center justify-center gap-2 disabled:cursor-not-allowed disabled:opacity-70"
                 >
                   <Send className="w-5 h-5" />
-                  Get Free Consultation
+                  {isSubmitting ? "Sending..." : "Get Free Consultation"}
                 </Button>
               </form>
 
