@@ -1,23 +1,29 @@
 import { z } from "zod"
 
 export const leadSubmissionSchema = z.object({
-  name: z.string().min(1, "Please provide your name.").max(100, "Name is too long."),
+  name: z
+    .string()
+    .trim()
+    .min(1, "Please provide your name.")
+    .max(100, "Name is too long."),
   email: z
     .string()
+    .trim()
     .min(1, "Please provide an email address.")
     .email("Please enter a valid email address."),
   phone: z
     .string()
+    .trim()
     .min(7, "Please provide a phone number.")
-    .max(25, "Phone number looks too long.")
-    .transform((value) => value.trim()),
+    .max(25, "Phone number looks too long."),
   message: z
     .string()
-    .optional()
-    .transform((value) => value?.trim() ?? "")
-    .refine((value) => value.length <= 2000, {
+    .trim()
+    .max(2000, {
       message: "Message should be 2000 characters or less.",
-    }),
+    })
+    .optional()
+    .transform((value) => value ?? ""),
 })
 
 export type LeadSubmission = z.infer<typeof leadSubmissionSchema>

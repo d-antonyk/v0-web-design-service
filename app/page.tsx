@@ -4,6 +4,7 @@ import type React from "react"
 
 import { Button } from "@/components/ui/button"
 import { Card } from "@/components/ui/card"
+import { cn } from "@/lib/utils"
 import {
   Star,
   Search,
@@ -25,19 +26,32 @@ import {
 import Image from "next/image"
 import { useEffect, useState } from "react"
 
-type FormState = {
-  name: string
-  email: string
-  phone: string
-  message: string
-}
+const formFieldNames = ["name", "email", "phone", "message"] as const
 
-const createInitialFormState = (): FormState => ({
+type FormFieldName = (typeof formFieldNames)[number]
+
+type FormState = Record<FormFieldName, string>
+
+type FormErrors = Partial<Record<FormFieldName, string>>
+
+const initialFormState: FormState = {
   name: "",
   email: "",
   phone: "",
   message: "",
-})
+}
+
+const createInitialFormState = (): FormState => ({ ...initialFormState })
+
+const formFieldNameSet = new Set<FormFieldName>(formFieldNames)
+
+const isFormFieldName = (value: string): value is FormFieldName =>
+  formFieldNameSet.has(value as FormFieldName)
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === "object" && value !== null
+
+const DEFAULT_ERROR_MESSAGE = "We couldn't submit your request. Please try again later."
 
 export default function WebDesignServicesPage() {
   const [selectedPortfolio, setSelectedPortfolio] = useState<number | null>(null)
@@ -45,6 +59,7 @@ export default function WebDesignServicesPage() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false) // Added state for mobile menu
   const [consultationPopupOpen, setConsultationPopupOpen] = useState(false)
   const [formData, setFormData] = useState<FormState>(createInitialFormState)
+  const [fieldErrors, setFieldErrors] = useState<FormErrors>({})
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [submitStatus, setSubmitStatus] = useState<"success" | "error" | null>(null)
   const [submitMessage, setSubmitMessage] = useState("")
@@ -53,6 +68,7 @@ export default function WebDesignServicesPage() {
     if (consultationPopupOpen) {
       setSubmitStatus(null)
       setSubmitMessage("")
+      setFieldErrors({})
     }
   }, [consultationPopupOpen])
 
@@ -69,13 +85,28 @@ export default function WebDesignServicesPage() {
   }
 
   const handleFormChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+    const { name, value } = e.target
+
+    if (!isFormFieldName(name)) {
+      return
+    }
+
     setSubmitStatus(null)
     setSubmitMessage("")
 
-    setFormData({
-      ...formData,
-      [e.target.name]: e.target.value,
+    setFieldErrors((previous) => {
+      if (!previous[name]) {
+        return previous
+      }
+
+      const { [name]: _removed, ...rest } = previous
+      return rest
     })
+
+    setFormData((previous) => ({
+      ...previous,
+      [name]: value,
+    }))
   }
 
   const handleFormSubmit = async (e: React.FormEvent) => {
@@ -83,6 +114,7 @@ export default function WebDesignServicesPage() {
     setIsSubmitting(true)
     setSubmitStatus(null)
     setSubmitMessage("")
+    setFieldErrors({})
 
     try {
       const response = await fetch("/api/leads", {
@@ -94,19 +126,50 @@ export default function WebDesignServicesPage() {
       })
 
       const result = await response.json().catch(() => ({}))
+      const parsedResult = isRecord(result) ? result : undefined
 
       if (!response.ok) {
-        throw new Error(result?.message || "We couldn't submit your request. Please try again later.")
+        if (parsedResult) {
+          const resultErrors = parsedResult.errors
+
+          if (isRecord(resultErrors)) {
+            const normalizedErrors: FormErrors = {}
+
+            for (const [field, messages] of Object.entries(resultErrors)) {
+              if (!isFormFieldName(field) || !Array.isArray(messages)) {
+                continue
+              }
+
+              const firstMessage = messages.find(
+                (message): message is string => typeof message === "string" && message.trim().length > 0,
+              )
+
+              if (firstMessage) {
+                normalizedErrors[field] = firstMessage
+              }
+            }
+
+            if (Object.keys(normalizedErrors).length > 0) {
+              setFieldErrors(normalizedErrors)
+            }
+          }
+        }
+
+        const message =
+          parsedResult && typeof parsedResult.message === "string" && parsedResult.message.trim().length > 0
+            ? parsedResult.message
+            : DEFAULT_ERROR_MESSAGE
+
+        throw new Error(message)
       }
 
       setSubmitStatus("success")
       setSubmitMessage("Thank you! We'll be in touch shortly.")
       setFormData(createInitialFormState())
+      setFieldErrors({})
     } catch (error) {
       const errorMessage =
-        error instanceof Error && error.message
-          ? error.message
-          : "We couldn't submit your request. Please try again later."
+        error instanceof Error && error.message ? error.message : DEFAULT_ERROR_MESSAGE
 
       setSubmitStatus("error")
       setSubmitMessage(errorMessage)
@@ -1296,41 +1359,97 @@ export default function WebDesignServicesPage() {
                     {submitMessage}
                   </p>
                 )}
-                <input
-                  type="text"
-                  name="name"
-                  placeholder="Your Name"
-                  value={formData.name}
-                  onChange={handleFormChange}
-                  required
-                  className="w-full px-6 py-4 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-                <input
-                  type="email"
-                  name="email"
-                  placeholder="Email Address"
-                  value={formData.email}
-                  onChange={handleFormChange}
-                  required
-                  className="w-full px-6 py-4 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-                <input
-                  type="tel"
-                  name="phone"
-                  placeholder="Phone Number"
-                  value={formData.phone}
-                  onChange={handleFormChange}
-                  required
-                  className="w-full px-6 py-4 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent"
-                />
-                <textarea
-                  name="message"
-                  placeholder="Tell us about your business..."
-                  value={formData.message}
-                  onChange={handleFormChange}
-                  rows={4}
-                  className="w-full px-6 py-4 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
-                />
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    name="name"
+                    placeholder="Your Name"
+                    value={formData.name}
+                    onChange={handleFormChange}
+                    required
+                    className={cn(
+                      "w-full px-6 py-4 border rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2",
+                      fieldErrors.name
+                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                        : "border-gray-300 focus:ring-orange-500 focus:border-transparent",
+                    )}
+                    aria-invalid={fieldErrors.name ? true : undefined}
+                    aria-describedby={fieldErrors.name ? "consultation-name-error" : undefined}
+                  />
+                  {fieldErrors.name && (
+                    <p id="consultation-name-error" className="text-sm text-red-600">
+                      {fieldErrors.name}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="email"
+                    name="email"
+                    placeholder="Email Address"
+                    value={formData.email}
+                    onChange={handleFormChange}
+                    required
+                    className={cn(
+                      "w-full px-6 py-4 border rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2",
+                      fieldErrors.email
+                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                        : "border-gray-300 focus:ring-orange-500 focus:border-transparent",
+                    )}
+                    aria-invalid={fieldErrors.email ? true : undefined}
+                    aria-describedby={fieldErrors.email ? "consultation-email-error" : undefined}
+                  />
+                  {fieldErrors.email && (
+                    <p id="consultation-email-error" className="text-sm text-red-600">
+                      {fieldErrors.email}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <input
+                    type="tel"
+                    name="phone"
+                    placeholder="Phone Number"
+                    value={formData.phone}
+                    onChange={handleFormChange}
+                    required
+                    className={cn(
+                      "w-full px-6 py-4 border rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2",
+                      fieldErrors.phone
+                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                        : "border-gray-300 focus:ring-orange-500 focus:border-transparent",
+                    )}
+                    aria-invalid={fieldErrors.phone ? true : undefined}
+                    aria-describedby={fieldErrors.phone ? "consultation-phone-error" : undefined}
+                  />
+                  {fieldErrors.phone && (
+                    <p id="consultation-phone-error" className="text-sm text-red-600">
+                      {fieldErrors.phone}
+                    </p>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <textarea
+                    name="message"
+                    placeholder="Tell us about your business..."
+                    value={formData.message}
+                    onChange={handleFormChange}
+                    rows={4}
+                    className={cn(
+                      "w-full px-6 py-4 border rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 resize-none",
+                      fieldErrors.message
+                        ? "border-red-500 focus:ring-red-500 focus:border-red-500"
+                        : "border-gray-300 focus:ring-orange-500 focus:border-transparent",
+                    )}
+                    aria-invalid={fieldErrors.message ? true : undefined}
+                    aria-describedby={fieldErrors.message ? "consultation-message-error" : undefined}
+                  />
+                  {fieldErrors.message && (
+                    <p id="consultation-message-error" className="text-sm text-red-600">
+                      {fieldErrors.message}
+                    </p>
+                  )}
+                </div>
 
                 {/* Primary CTA */}
                 <Button

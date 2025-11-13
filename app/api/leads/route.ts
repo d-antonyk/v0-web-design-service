@@ -3,37 +3,50 @@ import { ZodError } from "zod"
 
 import { forwardLeadToWebhook, leadSubmissionSchema } from "@/lib/leads"
 
+const GENERIC_ERROR_MESSAGE = "We couldn't submit your request. Please try again later."
+
 export async function POST(request: Request) {
+  let body: unknown
+
   try {
-    const body = await request.json()
-    const lead = leadSubmissionSchema.parse(body)
+    body = await request.json()
+  } catch {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "We couldn't read your submission. Please try again.",
+      },
+      { status: 400 },
+    )
+  }
 
-    await forwardLeadToWebhook(lead)
+  const parsedLead = leadSubmissionSchema.safeParse(body)
 
-    return NextResponse.json({ success: true })
+  if (!parsedLead.success) {
+    return NextResponse.json(
+      {
+        success: false,
+        message: "Please double-check the highlighted fields.",
+        errors: parsedLead.error.flatten().fieldErrors,
+      },
+      { status: 400 },
+    )
+  }
+
+  try {
+    await forwardLeadToWebhook(parsedLead.data)
   } catch (error) {
-    if (error instanceof ZodError) {
-      return NextResponse.json(
-        {
-          success: false,
-          message: "Please double-check the highlighted fields.",
-          errors: error.flatten().fieldErrors,
-        },
-        { status: 400 },
-      )
-    }
-
     console.error("Lead submission failed", error)
 
     return NextResponse.json(
       {
         success: false,
         message:
-          error instanceof Error
-            ? error.message || "We couldn't submit your request. Please try again later."
-            : "We couldn't submit your request. Please try again later.",
+          error instanceof Error && error.message ? error.message : GENERIC_ERROR_MESSAGE,
       },
       { status: 500 },
     )
   }
+
+  return NextResponse.json({ success: true })
 }
