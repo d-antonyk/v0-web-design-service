@@ -25,10 +25,16 @@ import {
 import Image from "next/image"
 import { useState } from "react"
 
+// --- ДОБАВЛЕНО: Helper для получения cookie ---
+const getCookie = (name: string) =>
+  typeof document === "undefined"
+    ? ""
+    : (`; ${document.cookie}`.split(`; ${name}=`).pop() || "").split(";").shift() || ""
+
 export default function WebDesignServicesPage() {
   const [selectedPortfolio, setSelectedPortfolio] = useState<number | null>(null)
   const [expandedPricing, setExpandedPricing] = useState<string | null>(null)
-  const [mobileMenuOpen, setMobileMenuOpen] = useState(false) // Added state for mobile menu
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [consultationPopupOpen, setConsultationPopupOpen] = useState(false)
   const [formData, setFormData] = useState({
     name: "",
@@ -36,6 +42,9 @@ export default function WebDesignServicesPage() {
     phone: "",
     message: "",
   })
+  
+  // --- ДОБАВЛЕНО: Состояние для отслеживания отправки ---
+  const [isSubmitting, setIsSubmitting] = useState(false)
 
   const togglePricing = (plan: string) => {
     setExpandedPricing((prev) => (prev === plan ? null : plan))
@@ -45,7 +54,7 @@ export default function WebDesignServicesPage() {
     const element = document.getElementById(sectionId)
     if (element) {
       element.scrollIntoView({ behavior: "smooth", block: "start" })
-      setMobileMenuOpen(false) // Close mobile menu after clicking
+      setMobileMenuOpen(false)
     }
   }
 
@@ -56,14 +65,55 @@ export default function WebDesignServicesPage() {
     })
   }
 
-  const handleFormSubmit = (e: React.FormEvent) => {
+  // --- ЗАМЕНЕНО: Функция отправки формы ---
+  const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    console.log("Form submitted:", formData)
-    // Here you would typically send the form data to your backend
-    setConsultationPopupOpen(false)
-    // Reset form
-    setFormData({ name: "", email: "", phone: "", message: "" })
+    setIsSubmitting(true)
+    try {
+      const digits = (formData.phone || "").replace(/\D+/g, "")
+
+      const payload = {
+        caller_name: formData.name,
+        phone_number: digits,
+        email: formData.email,
+        message: formData.message, // Добавляем поле message
+
+        gclid: getCookie("gclid"),
+        gbraid: getCookie("gbraid"),
+        utm_source: getCookie("utm_source"),
+        utm_medium: getCookie("utm_medium"),
+        utm_campaign: getCookie("utm_campaign"),
+        ctm_session_id: getCookie("ctm_session_id") || getCookie("ctm_session"),
+        embed_url: typeof window !== "undefined" ? window.location.href : "",
+      }
+
+      // Отправляем на наш собственный бэкенд /api/route.ts
+      const rsp = await fetch("/api", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload),
+      })
+
+      const text = await rsp.text()
+      let data: any = null
+      try { data = JSON.parse(text) } catch {}
+
+      if (!rsp.ok || data?.status !== "success") {
+        throw new Error(data?.text || text || "CTM error")
+      }
+
+      alert("Thank you! We'll contact you soon.")
+      setFormData({ name: "", email: "", phone: "", message: "" })
+      setConsultationPopupOpen(false)
+    } catch (err) {
+      console.error(err)
+      alert("Submission error. Please try again or call us.")
+    } finally {
+      setIsSubmitting(false)
+    }
   }
+  // --- КОНЕЦ ЗАМЕНЫ ---
+
 
   const portfolioItems = [
     {
@@ -1209,6 +1259,7 @@ export default function WebDesignServicesPage() {
         </div>
       </section>
 
+      {/* --- ИЗМЕНЕНИЯ В POP-UP ФОРМЕ --- */}
       {consultationPopupOpen && (
         <div
           className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4 overflow-y-auto"
@@ -1271,13 +1322,15 @@ export default function WebDesignServicesPage() {
                   className="w-full px-6 py-4 border border-gray-300 rounded-lg text-gray-900 placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-orange-500 focus:border-transparent resize-none"
                 />
 
-                {/* Primary CTA */}
+                {/* Primary CTA - ОБНОВЛЕНО */}
                 <Button
                   type="submit"
                   className="w-full bg-orange-500 hover:bg-orange-600 text-white py-6 text-lg rounded-lg shadow-lg flex items-center justify-center gap-2"
+                  disabled={isSubmitting} // Добавлено
                 >
                   <Send className="w-5 h-5" />
-                  Get Free Consultation
+                  {/* Добавлен текст загрузки */}
+                  {isSubmitting ? "Sending..." : "Get Free Consultation"}
                 </Button>
               </form>
 
@@ -1328,6 +1381,8 @@ export default function WebDesignServicesPage() {
           </div>
         </div>
       )}
+      {/* --- КОНЕЦ ИЗМЕНЕНИЙ В POP-UP ФОРМЕ --- */}
+
 
       <footer className="bg-gray-900 text-gray-300 py-8 md:py-12">
         <div className="container mx-auto px-4">
